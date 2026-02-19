@@ -83,7 +83,7 @@ export async function generateQuery(instruction) {
   const edgeFunctionUrl = process.env.EDGE_FUNCTION_URL;
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
   const simblyIngestSecret = process.env.SIMBLY_INGEST_SECRET;
-  const adminEmail = process.env.ADMIN_EMAIL; // Admin email from chat/setup
+  const adminUserId = process.env.ADMIN_USER_ID; // NEW: For admin notifications
 
   if (!edgeFunctionUrl || !supabaseAnonKey || !simblyIngestSecret) {
     throw new Error(
@@ -92,44 +92,6 @@ export async function generateQuery(instruction) {
   }
 
   const uniqueSuffix = Date.now();
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // HELPER: Get Admin User ID from Email
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  async function getAdminUserId() {
-    if (!adminEmail) {
-      return null;
-    }
-
-    try {
-      // Try to find user by email in profiles table first
-      const profileResult = await executeQuery(`
-        SELECT id FROM profiles WHERE email = '${adminEmail}' LIMIT 1
-      `).catch(() => []);
-
-      if (profileResult.length > 0) {
-        console.log(`   ✅ Found admin in profiles: ${adminEmail}`);
-        return profileResult[0].id;
-      }
-
-      // Fallback: Check auth.users
-      const authResult = await executeQuery(`
-        SELECT id FROM auth.users WHERE email = '${adminEmail}' LIMIT 1
-      `).catch(() => []);
-
-      if (authResult.length > 0) {
-        console.log(`   ✅ Found admin in auth.users: ${adminEmail}`);
-        return authResult[0].id;
-      }
-
-      console.warn(`   ⚠️  Admin email not found: ${adminEmail}`);
-      return null;
-    } catch (error) {
-      console.error(`   ❌ Error fetching admin ID: ${error.message}`);
-      return null;
-    }
-  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // STEP 1: ANALYZE INSTRUCTION
@@ -239,32 +201,13 @@ Now analyze: "${instruction}"`,
   );
   console.log(`   - Reasoning: ${analysis.reasoning}`);
 
-  // Get admin user ID if admin notification mode
-  let adminUserId = null;
-  if (analysis.notification_mode === "admin") {
-    if (!adminEmail) {
-      console.warn(
-        "\n⚠️  WARNING: Admin notification requested but ADMIN_EMAIL not set in .env",
-      );
-      console.warn("   The trigger will be created but emails won't be sent.");
-      console.warn(
-        "   Please add ADMIN_EMAIL=admin@yourdomain.com to .env file",
-      );
-    } else {
-      console.log(`\n🔍 Looking up admin user ID for: ${adminEmail}...`);
-      adminUserId = await getAdminUserId();
-
-      if (!adminUserId) {
-        console.warn(
-          `\n⚠️  WARNING: Could not find user with email: ${adminEmail}`,
-        );
-        console.warn(
-          "   Make sure this email exists in your auth.users or profiles table",
-        );
-      } else {
-        console.log(`   ✅ Admin user ID: ${adminUserId}`);
-      }
-    }
+  // Check if admin mode is requested but no admin ID configured
+  if (analysis.notification_mode === "admin" && !adminUserId) {
+    console.warn(
+      "\n⚠️  WARNING: Admin notification requested but ADMIN_USER_ID not set in .env",
+    );
+    console.warn("   The trigger will be created but emails won't be sent.");
+    console.warn("   Please add ADMIN_USER_ID=your-uuid-here to .env file");
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -396,14 +339,13 @@ ${
   analysis.notification_mode === "admin"
     ? `
 🔔 ADMIN NOTIFICATION MODE:
-- Admin Email: ${adminEmail || "NOT_SET"}
-- Admin User ID: ${adminUserId || "NOT_FOUND"}
-- Event name: "profiles.updated" (HARDCODED - never changes)
+- userId: '${adminUserId || "MISSING_ADMIN_ID"}' (fixed, from env)
+- Event name: table.event.admin_alert (e.g., "orders.created.admin_alert")
 - Properties: Include details about the NEW user/order/payment
 
 Example payload for admin:
 {
-  "event": "profiles.updated",
+  "event": "orders.created.admin_alert",
   "userId": "${adminUserId || "ADMIN_ID_HERE"}",
   "properties": {
     "notification_type": "admin_alert",
