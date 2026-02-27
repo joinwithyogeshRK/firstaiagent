@@ -1,10 +1,3 @@
-// agent.js - ULTIMATE SMART AGENT
-// Features:
-// 1. Smart amount/currency detection
-// 2. Custom properties extraction
-// 3. Admin notification mode
-// 4. Intelligent table name resolution
-
 import Anthropic from "@anthropic-ai/sdk";
 import { getDatabaseSchema } from "./tools/getDatabaseSchema.js";
 import { executeQuery } from "./tools/executeQuery.js";
